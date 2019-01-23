@@ -59,6 +59,66 @@ def embedding(inputs, input_vocab, padding=True, scaling=True):
 
     return outputs
 
-# Position-Wise Feed-Forward Networks
-# Scaled Dot-Product Attention
+# Layer Normalization
+def layer_norm(inputs):
+    # --------------------------- Input --------------------------- #
+    # inputs : multi-head attention outputs, shape of (batch_size, sentence max length, model dimension)
+
+    # --------------------------- Output --------------------------- #
+    # outputs : layer normalized with inputs, shape of (batch_size, sentence max length, model dimension)
+
+    with tf.variable_scope("layer_normalization"):
+        mean, variance = tf.nn.moments(inputs, axes=2, keep_dims=True) # get mean and variance per batch.
+        gamma = tf.Variable(tf.ones(inputs.get_shape()[2]))
+        beta  = tf.Variable(tf.zeros(inputs.get_shape()[2]))
+        normalized = (inputs - mean) / tf.sqrt(variance + 1e-5)
+        outputs = gamma * normalized + beta # (32, 20, 512, dtype=float32)
+
+    return outputs
+
 # Multi-Head Attention
+def multihead_attention(inputs, masking=False, dropout=True):
+    with tf.variable_scope("multihead_attention"):
+        # queries, keys, values come from the same place which is input
+        queries, keys, values = inputs, inputs, inputs
+
+        # linear transformation
+        Q = tf.layers.dense(queries, FLAGS.model_dim, activation=tf.nn.relu, use_bias=True) # (32, 20, 512)
+        K = tf.layers.dense(keys, FLAGS.model_dim, activation=tf.nn.relu, use_bias=True) # (32, 20, 512)
+        V = tf.layers.dense(values, FLAGS.model_dim, activation=tf.nn.relu, use_bias=True) # (32, 20, 512)
+
+        Q_concat = tf.concat(tf.split(Q, FLAGS.multi_head, axis=2), axis=0) # (8 * 32, 20, 64)
+        K_concat = tf.concat(tf.split(K, FLAGS.multi_head, axis=2), axis=0) # (8 * 32, 20, 64)
+        V_concat = tf.concat(tf.split(V, FLAGS.multi_head, axis=2), axis=0) # (8 * 32, 20, 64)
+
+        # Multiplication
+        K_transpose = tf.transpose(K_concat, perm=[0, 2, 1]) # (256, 64, 20)
+        logits = tf.matmul(Q_concat, K_transpose) # (256, 20, 20)
+
+        # Scaling because of variance maintenance
+        logits /= FLAGS.key_dim ** 0.5
+
+        # Masking (optional. for decoding)
+        if masking:
+            pass
+
+        # Softmax and multiply
+        outputs = tf.nn.softmax(logits) # (256, 20, 20)
+
+        # Dropout
+        outputs = tf.layers.dropout(outputs, rate=FLAGS.dropout ,training=dropout)
+
+        # Context Vectore, denoted as Attention(Q, K, V)
+        outputs = tf.matmul(outputs, V_concat) # (256, 20, 64)
+
+        outputs = tf.concat(tf.split(outputs, FLAGS.multi_head, axis=0), axis=2) # (32, 20, 8 * 64)
+
+        # Residual connection
+        outputs += inputs # (32, 20, 512)
+
+        # Normalize
+        outputs = layer_norm(outputs)
+
+    return outputs
+
+# Position-Wise Feed-Forward Networks
