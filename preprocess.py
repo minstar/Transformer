@@ -10,7 +10,7 @@ class Vocab:
         self.idx2token = idx2token or dict()
 
     def new_token(self, token):
-        # token : word or character
+        # token : word of dataset
         # return : index of token
         if token not in self.token2idx:
             index = len(self.token2idx)
@@ -24,7 +24,7 @@ class Vocab:
         return self.idx2token[index]
 
     def get_index(self, token):
-        # token : word or character
+        # token : word of dataset
         # return : index of token
         return self.token2idx[token]
 
@@ -93,8 +93,8 @@ def get_data(en_list, de_list):
     for idx in range(len(de_list)):
         # Remove sentence length is longer than 20 words
         if max(len(de_list[idx]), len(en_list[idx])) <= FLAGS.sentence_maxlen:
-            source.append(np.array(en_list[idx]))
-            target.append(np.array(de_list[idx]))
+            source.append(np.array(de_list[idx]))
+            target.append(np.array(en_list[idx]))
 
     # make the shape of Source matrix and Target matrix
     X = np.zeros([len(source), FLAGS.sentence_maxlen], dtype=np.int32)
@@ -105,8 +105,8 @@ def get_data(en_list, de_list):
         X[idx, :len(x)] = x
         Y[idx, :len(y)] = y
 
-    print ("Source Matrix Shape (EN):", X.shape)
-    print ("Target Matrix Shape (DE):", Y.shape)
+    print ("Source Matrix Shape (DE):", X.shape)
+    print ("Target Matrix Shape (EN):", Y.shape)
     print ()
     print ('------------------------ Show the example case ------------------------')
     print (X[0])
@@ -125,20 +125,20 @@ def batch_loader(X, Y):
     X = X[:reduced_length]
     Y = Y[:reduced_length]
 
-    print ("Reduced Source Matrix shape (EN):", X.shape)
-    print ("Reduced Target Matrix shape (DE):", Y.shape)
+    print ("Reduced Source Matrix shape (DE):", X.shape)
+    print ("Reduced Target Matrix shape (EN):", Y.shape)
 
     X = np.reshape(X, newshape=(FLAGS.batch_size, -1, FLAGS.sentence_maxlen))
     Y = np.reshape(Y, newshape=(FLAGS.batch_size, -1, FLAGS.sentence_maxlen))
 
-    print ("Shape of Source Matrix (EN):", X.shape)
-    print ("Shape of Target Matrix (DE):", Y.shape)
+    print ("Shape of Source Matrix (DE):", X.shape)
+    print ("Shape of Target Matrix (EN):", Y.shape)
 
     X = np.transpose(X, axes=(1,0,2))
     Y = np.transpose(Y, axes=(1,0,2))
 
-    print ("Shape of Source Matrix (EN):", X.shape)
-    print ("Shape of Target Matrix (DE):", Y.shape)
+    print ("Shape of Source Matrix (DE):", X.shape)
+    print ("Shape of Target Matrix (EN):", Y.shape)
 
     # while training, yield the shape of (batch_size, sentence max length) in X and Y
     zip_file = zip(X, Y)

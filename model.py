@@ -4,11 +4,11 @@ import tensorflow as tf
 from config import *
 
 # Positional Encoding
-def position_encoding(scaling=True):
+def position_encoding(scaling=True, scope=None):
     # --------------------------- Output --------------------------- #
     # outputs : positional encoded matrix shape of (32, 20, 512) zero padded.
 
-    with tf.variable_scope('positional_encoding'):
+    with tf.variable_scope(scope):
         position_idx = tf.tile(tf.expand_dims(tf.range(FLAGS.sentence_maxlen),0), [FLAGS.batch_size,1]) # (32, 20)
 
         # PE_(pos, 2i) = sin(pos / 10000 ^ (2i / d_model))
@@ -34,7 +34,7 @@ def position_encoding(scaling=True):
     return outputs
 
 # Inputs and Outputs embedding lookup function
-def embedding(inputs, input_vocab, padding=True, scaling=True):
+def embedding(inputs, input_vocab, padding=True, scaling=True, scope=None):
     # --------------------------- Input --------------------------- #
     # inputs : (batch_size, sentence max length) shape of input dataset
     # input_vocab : class, composed of token to index dictionary and reversed dictionary
@@ -43,7 +43,7 @@ def embedding(inputs, input_vocab, padding=True, scaling=True):
     # outputs : embedding matrix shape of (32, 20, 512) zero padded.
     print ("token number :",len(input_vocab.token2idx))
 
-    with tf.variable_scope("embedding"):
+    with tf.variable_scope(scope):
         table = tf.get_variable("word_embedding", shape=[len(input_vocab.token2idx), FLAGS.model_dim], \
                                 dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer())
 
@@ -60,14 +60,14 @@ def embedding(inputs, input_vocab, padding=True, scaling=True):
     return outputs
 
 # Layer Normalization
-def layer_norm(inputs):
+def layer_norm(inputs, scope=None):
     # --------------------------- Input --------------------------- #
     # inputs : multi-head attention outputs, shape of (batch_size, sentence max length, model dimension)
 
     # --------------------------- Output --------------------------- #
     # outputs : layer normalized with inputs, shape of (batch_size, sentence max length, model dimension)
 
-    with tf.variable_scope("layer_normalization"):
+    with tf.variable_scope(scope):
         mean, variance = tf.nn.moments(inputs, axes=2, keep_dims=True) # get mean and variance per batch.
         gamma = tf.Variable(tf.ones(inputs.get_shape()[2]))
         beta  = tf.Variable(tf.zeros(inputs.get_shape()[2]))
@@ -77,10 +77,14 @@ def layer_norm(inputs):
     return outputs
 
 # Multi-Head Attention
-def multihead_attention(inputs, masking=False, dropout=True):
-    with tf.variable_scope("multihead_attention"):
+def multihead_attention(inputs, encoded_output=None, decoding=False, masking=False, dropout=True, scope=None):
+    with tf.variable_scope(scope):
         # queries, keys, values come from the same place which is input
-        queries, keys, values = inputs, inputs, inputs
+
+        if decoding:
+            queries, keys, values = inputs, encoded_output, encoded_output
+        else:
+            queries, keys, values = inputs, inputs, inputs
 
         # linear transformation
         Q = tf.layers.dense(queries, FLAGS.model_dim, activation=tf.nn.relu, use_bias=True) # (32, 20, 512)
@@ -117,8 +121,115 @@ def multihead_attention(inputs, masking=False, dropout=True):
         outputs += inputs # (32, 20, 512)
 
         # Normalize
-        outputs = layer_norm(outputs)
+        outputs = layer_norm(outputs, scope="layer_norm")
 
     return outputs
 
 # Position-Wise Feed-Forward Networks
+def position_ffn(inputs, scope=None):
+    with tf.variable_scope(scope):
+        hidden_layer = tf.layers.dense(inputs, FLAGS.inner_layer, activation=tf.nn.relu, use_bias=True) # (32, 20, 2048)
+        output_layer = tf.layers.dense(hidden_layer, FLAGS.model_dim, activation=tf.nn.relu, use_bias=True) # (32, 20, 512)
+
+        # residual connection
+        output_layer += inputs # (32, 20, 512)
+
+        # Normalize
+        outputs = layer_norm(output_layer, scope="layer_norm") # (32, 20, 512)
+
+    return outputs
+
+# Encoder Stacked layers
+def encoding_stack(inputs, num_stack=FLAGS.stack_layer):
+    # --------------------------- Input --------------------------- #
+    # inputs : (batch_size, sentence max length, model dimension)
+
+    # --------------------------- Output --------------------------- #
+    # inputs : output of stacked layer
+    for idx in range(num_stack):
+        with tf.variable_scope("encoding_stack_{}".format(idx)):
+            hidden = multihead_attention(inputs, encoded_output=None, decoding=False, masking=False, \
+                                        dropout=True, scope="self_att_enc")
+            inputs = position_ffn(hidden, scope="enc_pffn") # (32, 20, 512)
+
+    return inputs
+
+# Decoder Stacked layers
+def decoding_stack(inputs, enc_input, num_stack=FLAGS.stack_layer):
+    # --------------------------- Input --------------------------- #
+    # inputs : (batch_size, sentence max length, model dimension) of output source
+    # enc_input : (batch_size, sentence max length, model dimension) of encoded output
+
+    # --------------------------- Output --------------------------- #
+    # inputs : output of stacked layer
+
+    for idx in range(num_stack):
+        with tf.variable_scope("decoding_stack_{}".format(idx)):
+            hidden = multihead_attention(inputs, encoded_output=None, decoding=False, masking=True, \
+                                        dropout=True, scope="mask_dec")
+            enc_added = multihead_attention(hidden, encoded_output=enc_input, decoding=True, masking=False, \
+                                            dropout=True, scope="self_att_dec")
+            inputs = position_ffn(enc_added, scope="dec_pffn")
+
+    return inputs
+
+# total model graph
+class model_graph():
+    def __init__(self, source=None, target=None):
+        # x, y : source _ (32, 20), target _ (32, 20)
+        self.source = source
+        self.target = target
+
+        self.enc_inputs = tf.placeholder(tf.int32, shape=[FLAGS.batch_size, FLAGS.sentence_maxlen], name="enc_inputs")
+        self.dec_inputs = tf.placeholder(tf.int32, shape=[FLAGS.batch_size, FLAGS.sentence_maxlen], name="dec_inputs")
+
+        with tf.variable_scope("Encoding"):
+            # input embedding lookup with table, source = de_vocab
+            self.emb_outputs = embedding(self.enc_inputs, input_vocab=self.source, padding=True, scaling=True, scope="enc_embed")
+
+            # added positional encoding to embedding matrix
+            self.pos_outputs = position_encoding(scaling=True, scope="enc_pe")
+            self.emb_outputs += self.pos_outputs
+
+            # Stacked layer (Encoder)
+            # multi-head attention, residual connection and Layer normalization
+            # Feed Forward, residual connection and Layer normalization
+            self.enc_outputs = encoding_stack(self.emb_outputs, num_stack=FLAGS.stack_layer)
+
+        with tf.variable_scope("Decoding"):
+            # input embedding lookup with table, target = en_vocab
+            self.emb_outputs_dec = embedding(self.dec_inputs, input_vocab=self.target, padding=True, scaling=True, scope="dec_embed")
+
+            # added positional encoding to embedding matrix
+            self.pos_outputs_dec = position_encoding(scaling=True, scope="dec_pe")
+            self.emb_outputs_dec += self.pos_outputs_dec
+
+            # Stacked layer (Decoded)
+            # multi-head attention, residual connection and Layer normalization
+            # Feed Forward, residual connection and Layer normalization
+            self.dec_outputs = decoding_stack(self.emb_outputs_dec, self.enc_outputs, num_stack=FLAGS.stack_layer)
+
+        # Linear Transformation
+        self.logits = tf.layers.dense(self.dec_outputs, len(self.target.token2idx)) # (32, 20, 123154)
+        self.pred = tf.argmax(self.logits, axis=-1, output_type=tf.int32)
+
+        # onehot encoding to use as label in loss function
+        self.y_onehot = tf.one_hot(self.dec_inputs, depth=len(self.target.token2idx))
+
+    def loss_fn(self):
+        with tf.variable_scope("loss_function"):
+            self.is_target = tf.to_float(tf.not_equal(self.dec_inputs, 0))
+            self.loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y_onehot)
+            self.mean_loss = tf.reduce_sum(self.loss * self.is_target) / tf.reduce_sum(self.is_target)
+            self.accuracy = tf.reduce_sum(tf.to_float(tf.equal(self.pred, self.y)) * self.is_target) / (tf.reduce_sum(self.is_target))
+
+        return self.is_target, self.loss, self.mean_loss, self.accuracy
+
+    def train_fn(self):
+        with tf.variable_scope("train_function"):
+            self.global_step = tf.Variable(0, name='global_step', trainable=False)
+            self.optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate, beta1=FLAGS.beta1, \
+                                                    beta2=FLAGS.beta2, epsilon=FLAGS.adam_epsilon)
+            self.train_op = self.optimizer.minimize(self.mean_loss, global_step=self.global_step)
+
+        return self.global_step, self.optimizer, self.train_op
