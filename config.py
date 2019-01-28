@@ -15,6 +15,8 @@ flags.DEFINE_integer('value_dim', 64, 'reduced dimension of each head, denoted a
 flags.DEFINE_integer('inner_layer', 2048, 'Position-Wise Feed-Forward Networks inner-layer dimensionality, denoted as d_ff')
 flags.DEFINE_integer('model_dim', 512, 'To faciliate residual connections, output of dimension is 512, denoted as d_model')
 flags.DEFINE_integer('warmup_steps', 4000, 'First Warmup_step training steps')
+flags.DEFINE_integer('epoch', 20, 'a number of training epoch')
+flags.DEFINE_integer('verbose', 100, 'a number of how many times to print loss')
 
 flags.DEFINE_float('dropout', 0.1, 'After softmax layer, use dropout when needed')
 flags.DEFINE_float('beta1', 0.9, 'Adam optimizer beta 1 number')

@@ -88,8 +88,8 @@ def multihead_attention(inputs, encoded_output=None, decoding=False, masking=Fal
 
         # linear transformation
         Q = tf.layers.dense(queries, FLAGS.model_dim, activation=tf.nn.relu, use_bias=True) # (32, 20, 512)
-        K = tf.layers.dense(keys, FLAGS.model_dim, activation=tf.nn.relu, use_bias=True) # (32, 20, 512)
-        V = tf.layers.dense(values, FLAGS.model_dim, activation=tf.nn.relu, use_bias=True) # (32, 20, 512)
+        K = tf.layers.dense(keys, FLAGS.model_dim, activation=tf.nn.relu, use_bias=True)    # (32, 20, 512)
+        V = tf.layers.dense(values, FLAGS.model_dim, activation=tf.nn.relu, use_bias=True)  # (32, 20, 512)
 
         Q_concat = tf.concat(tf.split(Q, FLAGS.multi_head, axis=2), axis=0) # (8 * 32, 20, 64)
         K_concat = tf.concat(tf.split(K, FLAGS.multi_head, axis=2), axis=0) # (8 * 32, 20, 64)
@@ -97,14 +97,18 @@ def multihead_attention(inputs, encoded_output=None, decoding=False, masking=Fal
 
         # Multiplication
         K_transpose = tf.transpose(K_concat, perm=[0, 2, 1]) # (256, 64, 20)
-        logits = tf.matmul(Q_concat, K_transpose) # (256, 20, 20)
+        logits = tf.matmul(Q_concat, K_transpose)            # (256, 20, 20)
 
         # Scaling because of variance maintenance
         logits /= FLAGS.key_dim ** 0.5
 
         # Masking (optional. for decoding)
         if masking:
-            pass
+            diag_vals = tf.ones_like(logits[0,:,:]) # (20, 20)
+            tril = tf.linalg.LinearOperatorLowerTriangular(diag_vals).to_dense()
+            masks = tf.tile(tf.expand_dims(tril, 0), [logits.get_shape()[0], 1, 1]) # (8 * 32, 20, 64)
+            paddings = tf.ones_like(masks) * (-1.0e9)
+            logits = tf.where(tf.equal(masks, 0), paddings, logits)
 
         # Softmax and multiply
         outputs = tf.nn.softmax(logits) # (256, 20, 20)
@@ -185,16 +189,16 @@ class model_graph():
 
         with tf.variable_scope("Encoding"):
             # input embedding lookup with table, source = de_vocab
-            self.emb_outputs = embedding(self.enc_inputs, input_vocab=self.source, padding=True, scaling=True, scope="enc_embed")
+            self.emb_outputs_enc = embedding(self.enc_inputs, input_vocab=self.source, padding=True, scaling=True, scope="enc_embed")
 
             # added positional encoding to embedding matrix
-            self.pos_outputs = position_encoding(scaling=True, scope="enc_pe")
-            self.emb_outputs += self.pos_outputs
+            self.pos_outputs_enc = position_encoding(scaling=True, scope="enc_pe")
+            self.emb_outputs_enc += self.pos_outputs_enc
 
             # Stacked layer (Encoder)
             # multi-head attention, residual connection and Layer normalization
             # Feed Forward, residual connection and Layer normalization
-            self.enc_outputs = encoding_stack(self.emb_outputs, num_stack=FLAGS.stack_layer)
+            self.enc_outputs = encoding_stack(self.emb_outputs_enc, num_stack=FLAGS.stack_layer)
 
         with tf.variable_scope("Decoding"):
             # input embedding lookup with table, target = en_vocab
@@ -210,7 +214,7 @@ class model_graph():
             self.dec_outputs = decoding_stack(self.emb_outputs_dec, self.enc_outputs, num_stack=FLAGS.stack_layer)
 
         # Linear Transformation
-        self.logits = tf.layers.dense(self.dec_outputs, len(self.target.token2idx)) # (32, 20, 123154)
+        self.logits = tf.layers.dense(self.dec_outputs, len(self.target.token2idx)) # (32, 20, 207203)
         self.pred = tf.argmax(self.logits, axis=-1, output_type=tf.int32)
 
         # onehot encoding to use as label in loss function
@@ -221,7 +225,7 @@ class model_graph():
             self.is_target = tf.to_float(tf.not_equal(self.dec_inputs, 0))
             self.loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y_onehot)
             self.mean_loss = tf.reduce_sum(self.loss * self.is_target) / tf.reduce_sum(self.is_target)
-            self.accuracy = tf.reduce_sum(tf.to_float(tf.equal(self.pred, self.y)) * self.is_target) / (tf.reduce_sum(self.is_target))
+            self.accuracy = tf.reduce_sum(tf.to_float(tf.equal(self.pred, self.dec_inputs)) * self.is_target) / (tf.reduce_sum(self.is_target))
 
         return self.is_target, self.loss, self.mean_loss, self.accuracy
 

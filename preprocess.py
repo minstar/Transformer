@@ -145,6 +145,10 @@ def batch_loader(X, Y):
 
     return X, Y, zip_file
 
+def iter_(zip_file):
+    for x, y in zip_file:
+        yield x, y
+
 def preprocess():
     en_vocab, en_list, en_sent, _ = make_data(file_name='train.en')
     de_vocab, de_list, de_sent, _ = make_data(file_name='train.de')
