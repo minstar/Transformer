@@ -40,9 +40,8 @@ def main(_):
         for epoch_time in range(FLAGS.epoch):
             train_loss = 0.0
             start = time.time()
-            idx = 0
 
-            for x, y in iter_(zip_file):
+            for idx, (x, y) in enumerate(zip_file):
                 # index 0 ~ 4109
                 input_ = {tr_model.enc_inputs : x, tr_model.dec_inputs : y}
                 loss, mean_loss, global_step, train_op, accuracy = sess.run([tr_loss, tr_mean_loss, \
@@ -56,11 +55,9 @@ def main(_):
                             mean_loss, time.time() - start, accuracy))
 
             print ('one epoch done, spend time :', time.time() - start)
-
-            saver.save(sess, '%s/epoch%d_%.3f.model' % ('./train_dir', epoch_time, mean_loss))
+            saver.save(sess, '%s/epoch%d_%.3f.model' % ('./train_dir', epoch_time, train_loss / X.shape[0]))
             print ('Successfully saved model')
-            summary = tf.Summary(value=[tf.Summary.Value(tag="Training_loss", simple_value=train_loss / len(zip_file))])
-
+            summary = tf.Summary(value=[tf.Summary.Value(tag="Training_loss", simple_value=train_loss / X.shape[0])])
             summary_writer.add_summary(summary, global_step)
 
 

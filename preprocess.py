@@ -141,13 +141,9 @@ def batch_loader(X, Y):
     print ("Shape of Target Matrix (EN):", Y.shape)
 
     # while training, yield the shape of (batch_size, sentence max length) in X and Y
-    zip_file = zip(X, Y)
+    zip_file = list(zip(X, Y))
 
     return X, Y, zip_file
-
-def iter_(zip_file):
-    for x, y in zip_file:
-        yield x, y
 
 def preprocess():
     en_vocab, en_list, en_sent, _ = make_data(file_name='train.en')
