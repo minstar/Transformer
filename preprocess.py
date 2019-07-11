@@ -1,3 +1,4 @@
+import pdb
 import time
 import numpy as np
 import tensorflow as tf
@@ -44,8 +45,10 @@ def make_data(file_name=None):
     whole_sent = list()
 
     EOS = '|' # End of sentence token
+    PAD = '<PAD>' # For Padding for matching all sentence length
     UNK = '<UNK>' # For unknown word at dev and test set
 
+    word_vocab.new_token(PAD)
     word_vocab.new_token(EOS) # End of sentence token to index 0
     word_vocab.new_token(UNK) # Unknown word will appear at dev and test set
 
@@ -91,10 +94,9 @@ def get_data(en_list, de_list):
     target = list()
 
     for idx in range(len(de_list)):
-        # Remove sentence length is longer than 20 words
-        if max(len(de_list[idx]), len(en_list[idx])) <= FLAGS.sentence_maxlen:
-            source.append(np.array(de_list[idx]))
-            target.append(np.array(en_list[idx]))
+        # Remove sentence length is longer than 40 words
+        source.append(np.array(de_list[idx], dtype=np.int32))
+        target.append(np.array(en_list[idx], dtype=np.int32))
 
     # make the shape of Source matrix and Target matrix
     X = np.zeros([len(source), FLAGS.sentence_maxlen], dtype=np.int32)
@@ -102,8 +104,8 @@ def get_data(en_list, de_list):
 
     # Padding with the shape of (sentence number, sentence length)
     for idx, (x, y) in enumerate(zip(source, target)):
-        X[idx, :len(x)] = x
-        Y[idx, :len(y)] = y
+        X[idx, :len(x[:FLAGS.sentence_maxlen])] = x[:FLAGS.sentence_maxlen]
+        Y[idx, :len(y[:FLAGS.sentence_maxlen])] = y[:FLAGS.sentence_maxlen]
 
     print ("Source Matrix Shape (DE):", X.shape)
     print ("Target Matrix Shape (EN):", Y.shape)
@@ -152,3 +154,6 @@ def preprocess():
     X, Y, zip_file = batch_loader(X, Y)
 
     return X, Y, en_vocab, de_vocab, zip_file
+
+if __name__=="__main__":
+    X, Y, en_vocab, de_vocab, zip_file = preprocess()
