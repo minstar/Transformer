@@ -2,6 +2,7 @@ import pdb
 import time
 import numpy as np
 import tensorflow as tf
+import sentencepiece as spm
 
 from config import *
 
@@ -29,7 +30,7 @@ class Vocab:
         # return : index of token
         return self.token2idx[token]
 
-def make_data(file_name=None):
+def make_data(file_name=None, ):
     # --------------------------- Input --------------------------- #
     # file_name : file name of preprocessed data of TED video script
 
@@ -146,6 +147,23 @@ def batch_loader(X, Y):
     zip_file = list(zip(X, Y))
 
     return X, Y, zip_file
+
+def use_wpm(need_model=False):
+    if need_model:
+        templates = '--input={} --model_prefix={} --vocab_size={}'
+        input_file = './dataset/de-en/train.de'
+        prefix = 'WPM_de_5000'
+        vocab_size = 5000
+        cmd = templates.format(input_file, prefix, vocab_size)
+        spm.SentencePieceTrainer.Train(cmd)
+
+    sp = spm.SentencePieceProcessor()
+    # print (sp.EncodeAsPieces(sentence))
+
+    # TODO
+    # utilize vocab and model to make source and target word embedding vocab dictionary
+
+    return 0
 
 def preprocess():
     en_vocab, en_list, en_sent, _ = make_data(file_name='train.en')
