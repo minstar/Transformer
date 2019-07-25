@@ -205,17 +205,16 @@ def use_wpm(need_model=False):
 
     return 0
 
-def preprocess(is_train=None):
-    
-    if is_train:
-        de_vocab, de_list, de_sent, _ = make_data(file_name='train.de')
-        en_vocab, en_list, en_sent, _ = make_data(file_name='train.en')
-    else:
-        de_vocab, _, _, _ = make_data(tr_file_name='train.de')
-        en_vocab, _, _, _ = make_data(tr_file_name='train.en')
+def preprocess():
 
+    de_vocab, de_list, _, _ = make_data(tr_file_name='train.de')
+    en_vocab, en_list, _, _ = make_data(tr_file_name='train.en')
+
+    if FLAGS.is_dev:
         de_list = make_dev_data('IWSLT16.TED.dev2010.de-en.de.xml', de_vocab)
         en_list = make_dev_data('IWSLT16.TED.dev2010.de-en.en.xml', en_vocab)
+    elif FLAGS.is_test:
+        pass
 
     X, Y = get_data(en_list, de_list)
     X, Y, zip_file = batch_loader(X, Y)
@@ -223,4 +222,4 @@ def preprocess(is_train=None):
     return X, Y, en_vocab, de_vocab, zip_file
 
 if __name__=="__main__":
-    X, Y, en_vocab, de_vocab, zip_file = preprocess(is_train=FLAGS.is_train)
+    X, Y, en_vocab, de_vocab, zip_file = preprocess()

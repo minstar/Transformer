@@ -5,7 +5,9 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string('f', '', 'kernel')
 flags.DEFINE_string('data_path', './dataset/de-en/', 'IWSLT16 TED training data with preprocessed')
-flags.DEFINE_boolean('is_train', False, 'training mode')
+
+flags.DEFINE_boolean('is_dev', True, 'dev mode')
+flags.DEFINE_boolean('is_test', False, 'test mode')
 
 flags.DEFINE_integer('sentence_maxlen', 40, 'Max length of the sentence')
 flags.DEFINE_integer('batch_size', 64, 'batch size of the data')

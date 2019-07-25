@@ -9,18 +9,18 @@ from config import *
 from model import *
 
 def main(_):
-    # GPU type setting
-    gpu_config = tf.ConfigProto(device_count={'GPU' : 0})
+    # -------------------- GPU type setting -------------------- #
+    gpu_config = tf.ConfigProto()
     gpu_config.gpu_options.allow_growth = True
     gpu_config.gpu_options.per_process_gpu_memory_fraction = 1
 
-    # -------------------- Import data ---------- #
+    # -------------------- Import data -------------------- #
     X, Y, en_vocab, de_vocab, zip_file = preprocess()
 
     # -------------------- Building Training Graph -------------------- #
     with tf.Graph().as_default(), tf.Session(config=gpu_config) as sess:
-        tf.set_random_seed(1170)
-        np.random.seed(seed=1170)
+        tf.set_random_seed(7777)
+        np.random.seed(seed=7777)
 
         initializer = tf.random_normal_initializer()
 
@@ -31,14 +31,14 @@ def main(_):
             tr_global_step, _, tr_train_op = tr_model.train_fn()
 
         # -------------------- Save Model -------------------- #
-        saver = tf.train.Saver(max_to_keep=10)
+        saver = tf.train.Saver(max_to_keep=20)
         sess.run(tf.global_variables_initializer())
         summary_writer = tf.summary.FileWriter('./train_dir', graph=sess.graph)
-        print ('Training start with initialized variable')
+        print ('----- Training start with initialized variable -----\n')
 
         # -------------------- Training Start -------------------- #
         for epoch_time in range(FLAGS.epoch):
-            train_loss = list()
+            train_loss, eval_loss = [], []
             start = time.time()
 
             for idx, (x, y) in enumerate(zip_file):
@@ -49,14 +49,13 @@ def main(_):
                 idx += 1
                 train_loss.append(loss)
                 if (idx+1) % FLAGS.verbose == 0:
-                    print ('epoch : %d, global_step : %d, loss : %.3f, time : %.2f' % (epoch_time, global_step, train_loss[idx],time.time() - start))
+                    print ('epoch : %d, global_step : %d, loss : %.3f, time : %.2f\n' % (epoch_time, global_step, loss, time.time() - start))
 
             print ('one epoch done, spend time :', time.time() - start)
             saver.save(sess, '%s/epoch%d_%.3f.model' % ('./train_dir', epoch_time, np.mean(train_loss) / X.shape[0]))
-            print ('Successfully saved model')
+            print ('Successfully saved model\n')
             summary = tf.Summary(value=[tf.Summary.Value(tag="Training_loss", simple_value=np.mean(train_loss) / X.shape[0])])
             summary_writer.add_summary(summary, global_step)
-
 
 if __name__ == "__main__":
     tf.app.run()
