@@ -30,37 +30,38 @@ class Vocab:
         # return : index of token
         return self.token2idx[token]
 
-def make_data(file_name=None, ):
+def make_data(tr_file_name=None):
     # --------------------------- Input --------------------------- #
     # file_name : file name of preprocessed data of TED video script
 
     # --------------------------- Output --------------------------- #
     # word_vocab : class, composed of token to index dictionary and reversed dictionary
     # word_list  : total sentences of training data as index list
-    # whole_sent : extended list of tatal senteces
     # word_maxlen: max length of vocabulary dictionary words
-
     word_vocab = Vocab()
 
-    word_list = list()
-    whole_sent = list()
+    word_list, whole_sent = [], []
 
     EOS = '|' # End of sentence token
     PAD = '<PAD>' # For Padding for matching all sentence length
     UNK = '<UNK>' # For unknown word at dev and test set
+    SOS = '<SOS>' # For starting token
 
     word_vocab.new_token(PAD)
-    word_vocab.new_token(EOS) # End of sentence token to index 0
+    word_vocab.new_token(EOS) # End of sentence token to index 1
     word_vocab.new_token(UNK) # Unknown word will appear at dev and test set
+    word_vocab.new_token(SOS) # End of sentence token to index 3
 
     word_maxlen = 0
-
     start = time.time()
-    with open(FLAGS.data_path + file_name, 'r', encoding='utf-8') as f:
+
+    with open(FLAGS.data_path + tr_file_name, 'r', encoding='utf-8') as f:
         line = f.readlines()
 
         for one_line in line:
             one_sent = list()
+            if '.en' in tr_file_name:
+                one_sent.append(word_vocab.get_index(SOS))
 
             for word in one_line.split():
                 one_sent.append(word_vocab.new_token(word))
@@ -70,17 +71,54 @@ def make_data(file_name=None, ):
 
             # End of Sentence
             one_sent.append(word_vocab.get_index(EOS))
-
             word_list.append(one_sent)
             whole_sent.extend(one_sent)
 
-    print (file_name + " file making indexing table time: %.3f" % (time.time() - start))
+    print (tr_file_name + " train file making indexing table time: %.3f" % (time.time() - start))
     print ("dictionary size : ", len(word_vocab.token2idx))
     print ("total number of sentences : ", len(word_list))
     print ("max length of the word : ", word_maxlen)
     print ()
 
     return word_vocab, word_list, whole_sent, word_maxlen
+
+def make_dev_data(dev_file_name, tr_word_vocab):
+    # --------------------------- Input --------------------------- #
+    # file_name : file name of preprocessed data of TED video script
+
+    # --------------------------- Output --------------------------- #
+    # word_vocab : class, composed of token to index dictionary and reversed dictionary
+    # word_list  : total sentences of training data as index list
+    # word_maxlen: max length of vocabulary dictionary words
+
+    EOS = '|'
+    UNK = '<UNK>'
+    SOS = '<SOS>'
+    dev_word_list = []
+
+    start = time.time()
+    with open(FLAGS.data_path + dev_file_name, 'r', encoding='utf-8') as f:
+        line = f.readlines()
+        for one_line in line:
+            one_sent = list()
+            if one_line.split()[0] == '<seg':
+                if '.en' in dev_file_name:
+                    one_sent.append(tr_word_vocab.get_index(SOS))
+
+                for word in one_line.split()[2:-1]:
+                    if word in tr_word_vocab.token2idx:
+                        one_sent.append(tr_word_vocab.get_index(word))
+                    else:
+                        one_sent.append(tr_word_vocab.get_index(UNK))
+
+            # End of Sentence
+            one_sent.append(tr_word_vocab.get_index(EOS))
+            dev_word_list.append(one_sent)
+
+    print (dev_file_name + " dev file making indexing table time: %.3f" % (time.time() - start))
+    print ("total number of sentences : %d\n" % len(dev_word_list))
+
+    return dev_word_list
 
 def get_data(en_list, de_list):
     # --------------------------- Input --------------------------- #
@@ -91,20 +129,22 @@ def get_data(en_list, de_list):
     # X : padded results of index list, composed of English lnaguage data (131549, 20)
     # Y : padded results of index list, composed of German language data  (131549, 20)
 
-    source = list()
-    target = list()
+    source_sent = list()
+    target_sent = list()
 
     for idx in range(len(de_list)):
         # Remove sentence length is longer than 40 words
-        source.append(np.array(de_list[idx], dtype=np.int32))
-        target.append(np.array(en_list[idx], dtype=np.int32))
+        if len(de_list[idx]) == 1:
+            continue
+        source_sent.append(np.array(de_list[idx], dtype=np.int32))
+        target_sent.append(np.array(en_list[idx], dtype=np.int32))
 
     # make the shape of Source matrix and Target matrix
-    X = np.zeros([len(source), FLAGS.sentence_maxlen], dtype=np.int32)
-    Y = np.zeros([len(target), FLAGS.sentence_maxlen], dtype=np.int32)
+    X = np.zeros([len(source_sent), FLAGS.sentence_maxlen], dtype=np.int32)
+    Y = np.zeros([len(target_sent), FLAGS.sentence_maxlen], dtype=np.int32)
 
     # Padding with the shape of (sentence number, sentence length)
-    for idx, (x, y) in enumerate(zip(source, target)):
+    for idx, (x, y) in enumerate(zip(source_sent, target_sent)):
         X[idx, :len(x[:FLAGS.sentence_maxlen])] = x[:FLAGS.sentence_maxlen]
         Y[idx, :len(y[:FLAGS.sentence_maxlen])] = y[:FLAGS.sentence_maxlen]
 
@@ -165,13 +205,22 @@ def use_wpm(need_model=False):
 
     return 0
 
-def preprocess():
-    en_vocab, en_list, en_sent, _ = make_data(file_name='train.en')
-    de_vocab, de_list, de_sent, _ = make_data(file_name='train.de')
+def preprocess(is_train=None):
+    
+    if is_train:
+        de_vocab, de_list, de_sent, _ = make_data(file_name='train.de')
+        en_vocab, en_list, en_sent, _ = make_data(file_name='train.en')
+    else:
+        de_vocab, _, _, _ = make_data(tr_file_name='train.de')
+        en_vocab, _, _, _ = make_data(tr_file_name='train.en')
+
+        de_list = make_dev_data('IWSLT16.TED.dev2010.de-en.de.xml', de_vocab)
+        en_list = make_dev_data('IWSLT16.TED.dev2010.de-en.en.xml', en_vocab)
+
     X, Y = get_data(en_list, de_list)
     X, Y, zip_file = batch_loader(X, Y)
 
     return X, Y, en_vocab, de_vocab, zip_file
 
 if __name__=="__main__":
-    X, Y, en_vocab, de_vocab, zip_file = preprocess()
+    X, Y, en_vocab, de_vocab, zip_file = preprocess(is_train=FLAGS.is_train)
