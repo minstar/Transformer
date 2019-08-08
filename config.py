@@ -4,7 +4,9 @@ flags = tf.app.flags
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('f', '', 'kernel')
-flags.DEFINE_string('data_path', './dataset/de-en/', 'IWSLT16 TED training data with preprocessed')
+flags.DEFINE_string('data_path', 'dataset/de-en/', 'IWSLT16 TED training data with preprocessed')
+flags.DEFINE_string('ger_glove', 'dataset/germany-glove/', 'germany glove 300d')
+flags.DEFINE_string('eng_glove', 'dataset/glove.840B.300d/', 'english glove 300d')
 
 flags.DEFINE_boolean('is_dev', True, 'dev mode')
 flags.DEFINE_boolean('is_test', False, 'test mode')

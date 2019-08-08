@@ -1,3 +1,4 @@
+import pdb
 import numpy as np
 import tensorflow as tf
 
@@ -34,7 +35,7 @@ def position_encoding(scaling=True, scope=None):
     return outputs
 
 # Inputs and Outputs embedding lookup function
-def embedding(inputs, input_vocab, padding=True, scaling=True, scope=None):
+def embedding(inputs=None, input_vocab=None, glove_dict=None, padding=False, scaling=True, scope=None):
     # --------------------------- Input --------------------------- #
     # inputs : (batch_size, sentence max length) shape of input dataset
     # input_vocab : class, composed of token to index dictionary and reversed dictionary
@@ -44,8 +45,10 @@ def embedding(inputs, input_vocab, padding=True, scaling=True, scope=None):
     print ("token number :",len(input_vocab.token2idx))
 
     with tf.variable_scope(scope):
-        table = tf.get_variable("word_embedding", shape=[len(input_vocab.token2idx), FLAGS.model_dim], \
-                                dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer())
+        # table = tf.get_variable("word_embedding", shape=[len(input_vocab.token2idx), FLAGS.model_dim], \
+                                # dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer())
+
+        table = tf.get_variable('glove_table', initializer=glove_dict, trainable=False)
 
         if padding:
             table = tf.concat((tf.zeros(shape=[1, FLAGS.model_dim]), table[1:]), axis=0)
@@ -179,7 +182,7 @@ def decoding_stack(inputs, enc_input, num_stack=FLAGS.stack_layer):
 
 # total model graph
 class model_graph():
-    def __init__(self, source=None, target=None):
+    def __init__(self, source=None, target=None, src_glove=None, trg_glove=None):
         # x, y : source _ (32, 20), target _ (32, 20)
         self.source = source
         self.target = target
@@ -189,32 +192,32 @@ class model_graph():
 
         with tf.variable_scope("Encoding"):
             # input embedding lookup with table, source = de_vocab
-            self.emb_outputs_enc = embedding(self.enc_inputs, input_vocab=self.source, padding=True, scaling=True, scope="enc_embed")
+            emb_outputs_enc = embedding(inputs=self.enc_inputs, input_vocab=self.source, glove_dict=src_glove, padding=False, scaling=True, scope="enc_embed")
 
             # added positional encoding to embedding matrix
-            self.pos_outputs_enc = position_encoding(scaling=True, scope="enc_pe")
-            self.emb_outputs_enc += self.pos_outputs_enc
+            pos_outputs_enc = position_encoding(scaling=True, scope="enc_pe")
+            emb_outputs_enc += pos_outputs_enc
 
             # Stacked layer (Encoder)
             # multi-head attention, residual connection and Layer normalization
             # Feed Forward, residual connection and Layer normalization
-            self.enc_outputs = encoding_stack(self.emb_outputs_enc, num_stack=FLAGS.stack_layer)
+            enc_outputs = encoding_stack(emb_outputs_enc, num_stack=FLAGS.stack_layer)
 
         with tf.variable_scope("Decoding"):
             # input embedding lookup with table, target = en_vocab
-            self.emb_outputs_dec = embedding(self.dec_inputs, input_vocab=self.target, padding=True, scaling=True, scope="dec_embed")
+            emb_outputs_dec = embedding(inputs=self.dec_inputs, input_vocab=self.target, glove_dict=trg_glove, padding=False, scaling=True, scope="dec_embed")
 
             # added positional encoding to embedding matrix
-            self.pos_outputs_dec = position_encoding(scaling=True, scope="dec_pe")
-            self.emb_outputs_dec += self.pos_outputs_dec
+            pos_outputs_dec = position_encoding(scaling=True, scope="dec_pe")
+            emb_outputs_dec += pos_outputs_dec
 
             # Stacked layer (Decoded)
             # multi-head attention, residual connection and Layer normalization
             # Feed Forward, residual connection and Layer normalization
-            self.dec_outputs = decoding_stack(self.emb_outputs_dec, self.enc_outputs, num_stack=FLAGS.stack_layer)
+            dec_outputs = decoding_stack(emb_outputs_dec, enc_outputs, num_stack=FLAGS.stack_layer)
 
         # Linear Transformation
-        self.logits = tf.layers.dense(self.dec_outputs, len(self.target.token2idx)) # (32, 20, 207203)
+        self.logits = tf.layers.dense(dec_outputs, len(self.target.token2idx)) # (32, 20, 207203)
         self.pred = tf.argmax(self.logits, axis=-1, output_type=tf.int32)
 
         # onehot encoding to use as label in loss function

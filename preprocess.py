@@ -1,5 +1,6 @@
 import pdb
 import time
+import pickle
 import numpy as np
 import tensorflow as tf
 import sentencepiece as spm
@@ -120,6 +121,13 @@ def make_dev_data(dev_file_name, tr_word_vocab):
 
     return dev_word_list
 
+def get_glove():
+    with open(FLAGS.ger_glove + 'glove_dict.pkl', 'rb') as fp:
+        ger_glove_dict = pickle.load(fp)
+    with open(FLAGS.eng_glove + 'glove_dict.pkl', 'rb') as fp:
+        eng_glove_dict = pickle.load(fp)
+    return ger_glove_dict, eng_glove_dict
+
 def get_data(en_list, de_list):
     # --------------------------- Input --------------------------- #
     # en_list : 196884 number of sentences at ted video, composed of English language data
@@ -206,20 +214,29 @@ def use_wpm(need_model=False):
     return 0
 
 def preprocess():
-
+    ger_glove_dict, eng_glove_dict = get_glove()
     de_vocab, de_list, _, _ = make_data(tr_file_name='train.de')
     en_vocab, en_list, _, _ = make_data(tr_file_name='train.en')
+    tr_X, tr_Y = get_data(en_list, de_list)
+    tr_X, tr_Y, tr_zip_file = batch_loader(tr_X, tr_Y)
 
     if FLAGS.is_dev:
-        de_list = make_dev_data('IWSLT16.TED.dev2010.de-en.de.xml', de_vocab)
-        en_list = make_dev_data('IWSLT16.TED.dev2010.de-en.en.xml', en_vocab)
+        de_list_dev = make_dev_data('IWSLT16.TEDX.dev2012.de-en.de.xml', de_vocab)
+        en_list_dev = make_dev_data('IWSLT16.TEDX.dev2012.de-en.en.xml', en_vocab)
+        dev_X, dev_Y = get_data(en_list_dev, de_list_dev)
+        dev_X, dev_Y, dev_zip_file = batch_loader(dev_X, dev_Y)
+
+        return en_vocab, de_vocab, tr_zip_file, dev_zip_file, ger_glove_dict, eng_glove_dict
     elif FLAGS.is_test:
-        pass
+        de_list_tst = make_dev_data('IWSLT16.TED.tst2012.de-en.de.xml', de_vocab)
+        en_list_tst = make_dev_data('IWSLT16.TED.tst2012.de-en.en.xml', en_vocab)
+        tst_X, tst_Y = get_data(en_list_tst, de_list_tst)
+        tst_X, tst_Y, tst_zip_file = batch_loader(tst_X, tst_Y)
 
-    X, Y = get_data(en_list, de_list)
-    X, Y, zip_file = batch_loader(X, Y)
+        return en_vocab, de_vocab, tst_zip_file, ger_glove_dict, eng_glove_dict
 
-    return X, Y, en_vocab, de_vocab, zip_file
+    return tr_X, tr_Y, en_vocab, de_vocab, tr_zip_file, ger_glove_dict, eng_glove_dict
 
 if __name__=="__main__":
-    X, Y, en_vocab, de_vocab, zip_file = preprocess()
+    # if not (FLAGS.is_dev or FLAGS.is_test):
+    X, Y, en_vocab, de_vocab, zip_file, ger_glove_dict, eng_glove_dict = preprocess()
